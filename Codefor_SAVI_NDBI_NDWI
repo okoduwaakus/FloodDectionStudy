@@ -1,4 +1,4 @@
-//import the study area as geometry
+//Our study area was imported into GEE and renamed as geometry
 var aoi = geometry;
 Map.centerObject(geometry);
 
