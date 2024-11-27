@@ -1,0 +1,83 @@
+//import study area and name it aoi
+//Import CHIRPS datasets
+
+// Function to calculate total yearly rainfall over the AOI
+function getYearlyTotal(year) {
+  // Define start and end date for the year
+  var startDate = ee.Date.fromYMD(year, 1, 1);
+  var endDate = ee.Date.fromYMD(year, 12, 31);
+  
+  // Filter the ImageCollection for the year and area of interest
+  var filtered = col.filterDate(startDate, endDate)
+                    .filterBounds(aoi);
+  
+  // Calculate the sum of precipitation for the year over the AOI
+  var yearlyTotal = filtered.sum().reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: aoi,
+    scale: 5000,
+    maxPixels: 1e9
+  }).get('precipitation');
+  
+  // Return the result as a dictionary with the year and the total precipitation
+  return ee.Feature(null, {
+    'year': year,
+    'total_precipitation': yearlyTotal
+  });
+}
+
+// Define the years to process
+var years = ee.List.sequence(1987, 2024);
+
+// Map over the years and calculate total yearly rainfall over the AOI
+var yearlyTotalFeatures = years.map(function(year) {
+  return getYearlyTotal(year);
+});
+
+// Convert to a FeatureCollection for charting
+var yearlyTotalFC = ee.FeatureCollection(yearlyTotalFeatures);
+
+// Print the FeatureCollection
+print('Yearly Total Rainfall Features:', yearlyTotalFC);
+
+// Generate a chart of the total yearly precipitation from 1987 to 2024
+var rainfallChart = ui.Chart.feature.byFeature({
+  features: yearlyTotalFC,
+  xProperty: 'year',
+  yProperties: ['total_precipitation']
+})
+.setChartType('LineChart')
+.setOptions({
+  title: 'Total Yearly Rainfall (1987-2024)',
+  hAxis: {title: 'Year'},
+  vAxis: {title: 'Total Precipitation (mm)'},
+  lineWidth: 4,
+  pointSize: 6,
+  series: {
+    0: {color: 'blue'}
+  }
+});
+
+// Display the chart
+print(rainfallChart);
+
+// Optional: Visualize the rainfall for a specific year, e.g., 1987, on the map
+var visParams = {
+  min: 0,
+  max: 5000,
+  palette: ['blue', 'green', 'yellow', 'red']
+};
+
+var image1987= col.filterDate('1987-01-01', '1987-12-31').sum();
+Map.centerObject(aoi, 6);
+Map.addLayer(image1987.clip(aoi), visParams, '1987 Total Rainfall');
+
+// Export the yearly mean data to Google Drive
+Export.image.toDrive({
+  image: image1987,
+  description: 'aoi_1987',
+  folder: 'EarthEngineExports',
+  scale: 5566,
+  region: aoi,
+  maxPixels: 1e13
+});
