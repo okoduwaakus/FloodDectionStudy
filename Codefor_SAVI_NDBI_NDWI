@@ -1,0 +1,281 @@
+//import the study area as geometry
+var aoi = geometry;
+Map.centerObject(geometry);
+
+var startDate = '1983-01-01';
+var endDate = '1990-12-31';
+
+// Function to apply scaling factors to Landsat 4 images
+function applyScaleFactors(image) {
+  var opticalBands = image.select('SR_B.').multiply(0.0000275).add(-0.2);
+  var thermalBand = image.select('ST_B6').multiply(0.00341802).add(149.0);
+  return image.addBands(opticalBands, null, true)
+              .addBands(thermalBand, null, true);
+}
+
+// Cloud mask function
+function maskL4sr(image) {
+  var cloudShadowBitMask = (1 << 3);
+  var cloudsBitMask = (1 << 5);
+  var qa = image.select('QA_PIXEL');
+  var mask = qa.bitwiseAnd(cloudShadowBitMask).eq(0)
+               .and(qa.bitwiseAnd(cloudsBitMask).eq(0));
+  return image.updateMask(mask);
+}
+
+// Load Landsat 4 image collection, apply scaling, and cloud masking
+var collection = ee.ImageCollection('LANDSAT/LT04/C02/T1_L2')
+  .filterDate(startDate, endDate)
+  .filterBounds(aoi)
+  .map(applyScaleFactors)
+  .map(maskL4sr);
+
+// Print metadata for each image in the collection
+collection.evaluate(function(images) {
+  images.features.forEach(function(feature) {
+    var id = feature.id;
+    var date = feature.properties.DATE_ACQUIRED;
+    var cloudCover = feature.properties.CLOUD_COVER;
+    print('Image ID:', id);
+    print('Acquisition Date:', date);
+    print('Cloud Cover:', cloudCover);
+  });
+});
+
+// Get the median image for visualization and index calculations
+var image = collection.median();
+
+// Visualization parameters for True Color (Bands 3, 2, 1)
+var visualization = {
+  bands: ['SR_B3', 'SR_B2', 'SR_B1'],
+  min: 0.0,
+  max: 0.3,
+};
+
+Map.addLayer(image, visualization, 'True Color (321)', false);
+
+// NDVI Calculation (NIR = Band 4, Red = Band 3 for Landsat 4)
+var ndvi = image.normalizedDifference(['SR_B4', 'SR_B3']).rename('NDVI');
+var ndviClip = ndvi.clip(aoi);
+
+var ndviVis = {
+  min: -1,
+  max: 1,
+  palette: ['blue', 'yellow', 'red'] // Blue (low), Yellow (medium), Red (high)
+};
+
+Map.addLayer(ndviClip, ndviVis, 'NDVI');
+
+// SAVI Calculation
+var L = 0.5;
+var savi = image.expression(
+  '((NIR - RED) * (1 + L)) / (NIR + RED + L)', {
+    'NIR': image.select('SR_B4'),
+    'RED': image.select('SR_B3'),
+    'L': L
+  }).rename('SAVI');
+var saviClip = savi.clip(aoi);
+
+var saviVis = {
+  min: -1,
+  max: 1,
+  palette: ['blue', 'yellow', 'red'] // Blue (low), Yellow (medium), Red (high)
+};
+
+Map.addLayer(saviClip, saviVis, 'SAVI');
+
+// NDBI Calculation (SWIR = Band 5, NIR = Band 4 for Landsat 4)
+var ndbi = image.normalizedDifference(['SR_B5', 'SR_B4']).rename('NDBI');
+var ndbiClip = ndbi.clip(aoi);
+
+var ndbiVis = {
+  min: -1,
+  max: 1,
+  palette: ['blue', 'yellow', 'red'] // Blue (low), Yellow (medium), Red (high)
+};
+
+Map.addLayer(ndbiClip, ndbiVis, 'NDBI');
+
+// NDWI Calculation (Green = Band 2, NIR = Band 4 for Landsat 4)
+var ndwi = image.normalizedDifference(['SR_B2', 'SR_B4']).rename('NDWI');
+var ndwiClip = ndwi.clip(aoi);
+
+var ndwiVis = {
+  min: -1,
+  max: 1,
+  palette: ['blue', 'yellow', 'red'] // Blue (low), Yellow (medium), Red (high)
+};
+
+Map.addLayer(ndwiClip, ndwiVis, 'NDWI');
+
+// Export SAVI, NDBI, and NDWI to Google Drive
+Export.image.toDrive({
+  image: saviClip,
+  description: 'savi_aoi_1987',
+  folder: 'my_folder',
+  region: aoi,
+  scale: 30,
+  crs: 'EPSG:4326',
+  maxPixels: 7e10
+});
+
+Export.image.toDrive({
+  image: ndbiClip,
+  description: 'ndbi_aoi_1987',
+  folder: 'my_folder',
+  region: aoi,
+  scale: 30,
+  crs: 'EPSG:4326',
+  maxPixels: 7e10
+});
+
+Export.image.toDrive({
+  image: ndwiClip,
+  description: 'ndwi_aoi_1987',
+  folder: 'my_folder',
+  region: aoi,
+  scale: 30,
+  crs: 'EPSG:4326',
+  maxPixels: 7e10
+});
+
+
+
+
+
+//FOR LANDSAT 8
+var aoi = geometry;
+Map.centerObject(geometry);
+
+var startDate = '2013-04-01';
+var endDate = '2014-10-20';
+
+// Applies scaling factors
+function applyScaleFactors(image) {
+  var opticalBands = image.select('SR_B.').multiply(0.0000275).add(-0.2);
+  var thermalBands = image.select('ST_B.*').multiply(0.00341802).add(149.0);
+  return image.addBands(opticalBands, null, true)
+              .addBands(thermalBands, null, true);
+}
+
+// Cloud mask function
+function maskL8sr(col) {
+  var cloudShadowBitMask = (1 << 3);
+  var cloudsBitMask = (1 << 5);
+  var qa = col.select('QA_PIXEL');
+  var mask = qa.bitwiseAnd(cloudShadowBitMask).eq(0)
+               .and(qa.bitwiseAnd(cloudsBitMask).eq(0));
+  return col.updateMask(mask);
+}
+
+// Filter the collection by AOI and date, apply scaling, and cloud masking
+var imageCollection = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+  .filterDate(startDate, endDate)
+  .filterBounds(aoi)
+  .map(applyScaleFactors)
+  .map(maskL8sr);
+
+// Print the acquisition year and cloud cover for each image
+imageCollection.evaluate(function(images) {
+  images.features.forEach(function(image) {
+    var date = ee.Date(image.properties.DATE_ACQUIRED).get('year').getInfo();
+    var cloudCover = image.properties.CLOUD_COVER;
+    print('Year:', date, 'Cloud Cover:', cloudCover);
+  });
+});
+
+// Display the median composite for visualization
+var image = imageCollection.median();
+
+var visualization = {
+  bands: ['SR_B4', 'SR_B3', 'SR_B2'],
+  min: 0.0,
+  max: 0.3,
+};
+
+Map.addLayer(image, visualization, 'True Color (432)', false);
+
+// NDVI Calculation
+var ndvi = image.normalizedDifference(['SR_B5', 'SR_B4']).rename('NDVI');
+var ndviClip = ndvi.clip(aoi);
+
+var ndviVis = {
+  min: -1,
+  max: 1,
+  palette: ['blue', 'yellow', 'red']
+};
+
+Map.addLayer(ndviClip, ndviVis, 'NDVI');
+
+// SAVI Calculation
+var L = 0.5;
+var savi = image.expression(
+  '((NIR - RED) * (1 + L)) / (NIR + RED + L)', {
+    'NIR': image.select('SR_B5'),
+    'RED': image.select('SR_B4'),
+    'L': L
+  }).rename('SAVI');
+var saviClip = savi.clip(aoi);
+
+var saviVis = {
+  min: -1,
+  max: 1,
+  palette: ['blue', 'yellow', 'red']
+};
+
+Map.addLayer(saviClip, saviVis, 'SAVI');
+
+// NDBI Calculation
+var ndbi = image.normalizedDifference(['SR_B6', 'SR_B5']).rename('NDBI');
+var ndbiClip = ndbi.clip(aoi);
+
+var ndbiVis = {
+  min: -1,
+  max: 1,
+  palette: ['blue', 'yellow', 'red']
+};
+
+Map.addLayer(ndbiClip, ndbiVis, 'NDBI');
+
+// NDWI Calculation
+var ndwi = image.normalizedDifference(['SR_B3', 'SR_B5']).rename('NDWI');
+var ndwiClip = ndwi.clip(aoi);
+
+var ndwiVis = {
+  min: -1,
+  max: 1,
+  palette: ['blue', 'yellow', 'red']
+};
+
+Map.addLayer(ndwiClip, ndwiVis, 'NDWI');
+
+// Export SAVI, NDBI, and NDWI to Google Drive
+Export.image.toDrive({
+  image: saviClip,
+  description: 'savi_aoi_2024',
+  folder: 'my_folder',
+  region: aoi,
+  scale: 30,
+  crs: 'EPSG:4326',
+  maxPixels: 7e10
+});
+
+Export.image.toDrive({
+  image: ndbiClip,
+  description: 'ndbi_aoi_2024',
+  folder: 'my_folder',
+  region: aoi,
+  scale: 30,
+  crs: 'EPSG:4326',
+  maxPixels: 7e10
+});
+
+Export.image.toDrive({
+  image: ndwiClip,
+  description: 'ndwi_aoi_2024',
+  folder: 'my_folder',
+  region: aoi,
+  scale: 30,
+  crs: 'EPSG:4326',
+  maxPixels: 7e10
+});
