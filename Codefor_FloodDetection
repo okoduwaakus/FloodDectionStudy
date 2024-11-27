@@ -1,0 +1,97 @@
+//Our study area was imported into GEE and renamed ROI
+// Center the map on the imported ROI geometry
+Map.centerObject(geometry);
+
+// Sentinel-1 SAR ImageCollection before flood
+var sar_before = ee.ImageCollection("COPERNICUS/S1_GRD")
+  .filterDate('2024-07-05','2024-07-25')
+  .filterBounds(geometry)
+  .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+  .filter(ee.Filter.eq('instrumentMode', 'IW'))
+  .filter(ee.Filter.eq('orbitProperties_pass', 'ASCENDING'))
+  .select('VV')
+  .map(function(img) {
+    return img.focalMean(50, 'square', 'meters')
+      .copyProperties(img, img.propertyNames());
+  });
+
+// Display SAR before flood
+var sar_before_min = sar_before.min().clip(geometry);
+Map.addLayer(sar_before_min, [], 'sar_before', false);
+
+// Export the before flood image
+Export.image.toDrive({
+  image: sar_before_min,
+  description: 'SAR_Before_Flood',
+  scale: 10,
+  region: geometry,
+  maxPixels: 1e13
+});
+
+// Sentinel-1 SAR ImageCollection after flood
+var sar_after = ee.ImageCollection("COPERNICUS/S1_GRD")
+  .filterDate('2024-09-05', '2024-09-25')
+  .filterBounds(geometry)
+  .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+  .filter(ee.Filter.eq('instrumentMode', 'IW'))
+  .filter(ee.Filter.eq('orbitProperties_pass', 'ASCENDING'))
+  .select('VV')
+  .map(function(img) {
+    return img.focalMean(50, 'square', 'meters')
+      .copyProperties(img, img.propertyNames());
+  });
+
+// Display SAR after flood
+var sar_after_min = sar_after.min().clip(geometry);
+Map.addLayer(sar_after_min, [], 'sar_after', false);
+
+// Export the after flood image
+Export.image.toDrive({
+  image: sar_after_min,
+  description: 'SAR_After_Flood',
+  scale: 10,
+  region: geometry,
+  maxPixels: 1e13
+});
+
+// Calculate the change between before and after images
+var change = sar_before_min.subtract(sar_after_min);
+Map.addLayer(change.clip(geometry), [], 'change', false);
+
+// Apply water mask
+var water_mask = ee.ImageCollection("GOOGLE/DYNAMICWORLD/V1")
+  .select('label')
+  .filterDate('2023', '2024')
+  .filterBounds(geometry)
+  .mode().eq(0).not();
+
+// Thresholding the change image
+var thr = change.gt(1.25).updateMask(water_mask);
+Map.addLayer(thr.clip(geometry), [], 'change_thr', false);
+
+// Masking flooded areas
+var flooded = thr.updateMask(thr);
+Map.addLayer(flooded.clip(geometry), {palette: ['blue']}, 'flooded', false);
+
+// Export the flooded area image
+Export.image.toDrive({
+  image: flooded.clip(geometry),
+  description: 'Flooded_Area',
+  scale: 10,
+  region: geometry,
+  maxPixels: 1e13
+});
+
+// Calculate flood area in square kilometers
+var area_img = flooded.multiply(ee.Image.pixelArea().divide(1e6));
+
+// Adjust scale for reduceRegion and use geometry bounds to reduce pixel load
+var flood_area = area_img.reduceRegion({
+  reducer: ee.Reducer.sum(), 
+  geometry: geometry,  // Use your pre-imported ROI geometry directly
+  scale: 100,  // Adjusted scale to reduce pixel load
+  maxPixels: 1e9  // Increase maxPixels limit if needed
+});
+
+// Print the flood area
+print(flood_area);
